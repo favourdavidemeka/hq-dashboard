@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Agent HQ</title>
+
+  <!-- Security Headers -->
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';">
+
+  <!-- PWA Manifest & Theme -->
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#020617">
+
+  <!-- App Icons -->
+  <link rel="icon" type="image/svg+xml" href="./icon.svg">
+  <link rel="apple-touch-icon" sizes="192x192" href="./icon-192.png">
+
+  <!-- Mobile Full-Screen Web App Tags -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Agent HQ">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased">
+
+  <div class="max-w-lg mx-auto px-4 py-6 pb-20">
+
+    <!-- Header -->
+    <header class="flex items-center justify-between mb-5">
+      <div>
+        <h1 class="text-xl font-bold tracking-tight text-blue-400">Agent HQ</h1>
+        <p class="text-xs text-slate-400">Eisenhower Matrix &amp; Weekly Analytics</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="refresh-btn" onclick="refreshActiveView()" title="Refresh"
+          class="hidden p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition">
+          ↻
+        </button>
+        <button id="lock-btn" onclick="lockSession()" title="Lock Now"
+          class="hidden p-2 rounded-lg bg-slate-800 hover:bg-red-900/60 text-slate-300 hover:text-red-300 text-sm transition">
+          🔒
+        </button>
+        <button onclick="toggleSetup()" title="Connection Settings"
+          class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition">
+          ⚙️
+        </button>
+      </div>
+    </header>
+
+    <!-- Setup Form (Credentials stay local to this browser only) -->
+    <section id="setup-section" class="bg-slate-900 border border-slate-800 p-4 rounded-xl mb-6 hidden">
+      <h2 class="text-sm font-semibold text-slate-200 mb-3">Connect to Apps Script (V3 Hardened)</h2>
+      <input id="app-url" type="url" autocomplete="off"
+        placeholder="Web App URL (https://script.google.com/macros/s/.../exec)"
+        class="w-full p-2.5 mb-2.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <input id="app-token" type="password" autocomplete="off"
+        placeholder="43-Character Access Token (WEB_TOKEN)"
+        class="w-full p-2.5 mb-3 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <label class="flex items-center gap-2 text-xs text-slate-400 mb-3.5 cursor-pointer select-none">
+        <input id="remember-device" type="checkbox"
+          class="rounded bg-slate-800 border-slate-700 text-blue-600 focus:ring-blue-500">
+        Stay signed in on this device (leave unchecked on shared devices)
+      </label>
+      <div class="flex gap-2">
+        <button onclick="saveCredentials()"
+          class="flex-1 bg-blue-600 hover:bg-blue-500 py-2.5 rounded-lg text-sm font-semibold transition">
+          Save &amp; Connect
+        </button>
+        <button onclick="lockSession()"
+          class="px-3 bg-slate-800 hover:bg-red-900/60 text-slate-300 hover:text-red-300 rounded-lg text-xs transition">
+          Reset
+        </button>
+      </div>
+    </section>
+
+    <!-- Main App Shell -->
+    <main id="app-shell" class="hidden">
+
+      <!-- View Switcher Tabs -->
+      <div class="grid grid-cols-2 gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 mb-5">
+        <button id="tab-matrix" onclick="switchTab('matrix')"
+          class="py-2 rounded-lg text-sm font-semibold bg-blue-600 text-white transition">
+          Matrix <span id="pending-badge" class="ml-1 text-xs bg-blue-800/80 px-1.5 py-0.5 rounded-full">0</span>
+        </button>
+        <button id="tab-progress" onclick="switchTab('progress')"
+          class="py-2 rounded-lg text-sm font-semibold text-slate-400 hover:text-slate-200 transition">
+          Weekly Progress
+        </button>
+      </div>
+
+      <!-- ===================== MATRIX VIEW ===================== -->
+      <section id="view-matrix">
+
+        <!-- Quick Add Bar -->
+        <form onsubmit="addTask(event)" class="flex gap-2 mb-4">
+          <input id="new-task" type="text" maxlength="1500"
+            placeholder="Dump 1 or more tasks with deadlines..."
+            class="flex-1 p-3 bg-slate-900 border border-slate-800 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <button id="add-btn" type="submit"
+            class="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-4 rounded-xl text-sm font-semibold transition">
+            Add
+          </button>
+        </form>
+
+        <!-- Quadrant Filter Pills -->
+        <div id="filter-bar" class="flex gap-1.5 overflow-x-auto pb-2 mb-3">
+          <button onclick="setFilter('ALL')" data-filter="ALL" data-idle="text-slate-300"
+            class="filter-pill px-3 py-1 rounded-full text-xs font-medium bg-blue-600 text-white transition">All</button>
+          <button onclick="setFilter('Q1')" data-filter="Q1" data-idle="text-red-400"
+            class="filter-pill px-3 py-1 rounded-full text-xs font-medium bg-slate-800 text-red-400 transition">Q1 Urgent</button>
+          <button onclick="setFilter('Q2')" data-filter="Q2" data-idle="text-blue-400"
+            class="filter-pill px-3 py-1 rounded-full text-xs font-medium bg-slate-800 text-blue-400 transition">Q2 Deep Work</button>
+          <button onclick="setFilter('Q3')" data-filter="Q3" data-idle="text-amber-400"
+            class="filter-pill px-3 py-1 rounded-full text-xs font-medium bg-slate-800 text-amber-400 transition">Q3 Batch</button>
+          <button onclick="setFilter('Q4')" data-filter="Q4" data-idle="text-slate-400"
+            class="filter-pill px-3 py-1 rounded-full text-xs font-medium bg-slate-800 text-slate-400 transition">Q4 Later</button>
+        </div>
+
+        <!-- Loading & Task List -->
+        <div id="matrix-loading" class="text-center text-slate-400 text-sm py-8 hidden">Syncing with HQ...</div>
+        <div id="task-list" class="space-y-3"></div>
+
+      </section>
+
+      <!-- ===================== PROGRESS VIEW ===================== -->
+      <section id="view-progress" class="hidden space-y-4">
+
+        <div id="stats-loading" class="text-center text-slate-400 text-sm py-8 hidden">Loading 7-day analytics...</div>
+        <div id="stats-notice" class="hidden bg-amber-950/50 border border-amber-800/60 text-amber-200 text-xs p-3.5 rounded-xl">
+          Weekly stats are unavailable. Verify that your V3 Apps Script deployment is active and up to date.
+        </div>
+
+        <div id="stats-content" class="space-y-4 hidden">
+          <!-- KPI Grid -->
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">
+              <p class="text-xs text-slate-400">Completed (7d)</p>
+              <p id="kpi-done" class="text-2xl font-bold text-emerald-400 mt-1">0</p>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">
+              <p class="text-xs text-slate-400">Completion Rate</p>
+              <p id="kpi-rate" class="text-2xl font-bold text-blue-400 mt-1">0%</p>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">
+              <p class="text-xs text-slate-400">Focus Time (7d)</p>
+              <p id="kpi-focus" class="text-2xl font-bold text-violet-400 mt-1">0h</p>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">
+              <p class="text-xs text-slate-400">Active Backlog</p>
+              <p id="kpi-backlog" class="text-2xl font-bold text-amber-400 mt-1">0</p>
+            </div>
+          </div>
+
+          <!-- 7-Day Activity Stacked Bar Chart -->
+          <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+            <h2 class="text-sm font-semibold text-slate-200 mb-3">7-Day Task Outcomes</h2>
+            <div class="relative h-56">
+              <canvas id="activityChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Completed by Quadrant Doughnut Chart -->
+          <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+            <div class="flex items-center justify-between mb-3">
+              <h2 class="text-sm font-semibold text-slate-200">Completed by Quadrant (7d)</h2>
+              <span class="text-xs text-slate-500">Target: High Q2 share</span>
+            </div>
+            <div class="relative h-52 flex items-center justify-center">
+              <canvas id="quadrantChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Non-blocking Toast Banner -->
+  <div id="toast"
+    class="fixed bottom-5 left-1/2 -translate-x-1/2 max-w-[90vw] text-center bg-slate-800 border border-slate-700 text-slate-100 text-xs font-medium px-4 py-2.5 rounded-full shadow-xl opacity-0 pointer-events-none transition-opacity duration-200"></div>
+
+  <script>
+    function getStored(key) {
+      return sessionStorage.getItem(key) || localStorage.getItem(key) || '';
+    }
+
+    let scriptUrl = getStored('HQ_URL');
+    let webToken = getStored('HQ_TOKEN');
+    let activeTab = 'matrix';
+    let activeFilter = 'ALL';
+    let cachedTasks = [];
+    let statsLoaded = false;
+    let activityChartInstance = null;
+    let quadrantChartInstance = null;
+
+    const QUAD_ORDER = { Q1: 1, Q2: 2, Q3: 3, Q4: 4 };
+    const QUAD_STYLES = {
+      Q1: { border: 'border-red-500', badge: 'bg-red-500/15 text-red-400', label: 'Q1 · Do First' },
+      Q2: { border: 'border-blue-500', badge: 'bg-blue-500/15 text-blue-400', label: 'Q2 · Deep Work' },
+      Q3: { border: 'border-amber-500', badge: 'bg-amber-500/15 text-amber-400', label: 'Q3 · Batch' },
+      Q4: { border: 'border-slate-500', badge: 'bg-slate-500/20 text-slate-400', label: 'Q4 · Later' }
+    };
+
+    // Bootstrap UI
+    if (!scriptUrl || !webToken) {
+      document.getElementById('setup-section').classList.remove('hidden');
+    } else {
+      document.getElementById('app-shell').classList.remove('hidden');
+      document.getElementById('refresh-btn').classList.remove('hidden');
+      document.getElementById('lock-btn').classList.remove('hidden');
+      document.getElementById('app-url').value = scriptUrl;
+      document.getElementById('app-token').value = webToken;
+      document.getElementById('remember-device').checked = Boolean(localStorage.getItem('HQ_TOKEN'));
+      loadTasks();
+    }
+
+    function toggleSetup() {
+      document.getElementById('setup-section').classList.toggle('hidden');
+    }
+
+    function saveCredentials() {
+      const urlVal = document.getElementById('app-url').value.trim();
+      const tokenVal = document.getElementById('app-token').value.trim();
+      const remember = document.getElementById('remember-device').checked;
+
+      if (!urlVal.startsWith('https://script.google.com/macros/s/')) {
+        showToast('Enter a valid HTTPS Google Apps Script Web App URL');
+        return;
+      }
+      if (tokenVal.length < 16) {
+        showToast('Enter your full 43-character WEB_TOKEN');
+        return;
+      }
+
+      sessionStorage.removeItem('HQ_URL');
+      sessionStorage.removeItem('HQ_TOKEN');
+      localStorage.removeItem('HQ_URL');
+      localStorage.removeItem('HQ_TOKEN');
+      localStorage.removeItem('HQ_PIN'); // Clean up legacy PIN if present
+
+      const store = remember ? localStorage : sessionStorage;
+      store.setItem('HQ_URL', urlVal);
+      store.setItem('HQ_TOKEN', tokenVal);
+      location.reload();
+    }
+
+    function lockSession() {
+      sessionStorage.removeItem('HQ_URL');
+      sessionStorage.removeItem('HQ_TOKEN');
+      localStorage.removeItem('HQ_URL');
+      localStorage.removeItem('HQ_TOKEN');
+      localStorage.removeItem('HQ_PIN');
+      location.reload();
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.remove('opacity-0');
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => toast.classList.add('opacity-0'), 3000);
+    }
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // Hardened POST-only transport (text/plain avoids Apps Script CORS preflight block)
+    async function apiCall(action, payloadObj = {}) {
+      const res = await fetch(scriptUrl, {
+        method: 'POST',
+        redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ token: webToken, action: action }, payloadObj))
+      });
+      const data = await res.json();
+      if (data && data.error) throw new Error(data.error);
+      return data;
+    }
+
+    function switchTab(tab) {
+      activeTab = tab;
+      const isMatrix = tab === 'matrix';
+
+      document.getElementById('view-matrix').classList.toggle('hidden', !isMatrix);
+      document.getElementById('view-progress').classList.toggle('hidden', isMatrix);
+
+      document.getElementById('tab-matrix').className = isMatrix
+        ? 'py-2 rounded-lg text-sm font-semibold bg-blue-600 text-white transition'
+        : 'py-2 rounded-lg text-sm font-semibold text-slate-400 hover:text-slate-200 transition';
+      document.getElementById('tab-progress').className = !isMatrix
+        ? 'py-2 rounded-lg text-sm font-semibold bg-blue-600 text-white transition'
+        : 'py-2 rounded-lg text-sm font-semibold text-slate-400 hover:text-slate-200 transition';
+
+      if (!isMatrix && !statsLoaded) {
+        loadStats();
+      }
+    }
+
+    function refreshActiveView() {
+      if (activeTab === 'matrix') {
+        loadTasks();
+      } else {
+        loadStats();
+      }
+    }
+
+    function setFilter(quad) {
+      activeFilter = quad;
+      document.querySelectorAll('.filter-pill').forEach(btn => {
+        const active = btn.dataset.filter === quad;
+        const idleText = btn.dataset.idle || 'text-slate-300';
+        btn.className = active
+          ? 'filter-pill px-3 py-1 rounded-full text-xs font-medium bg-blue-600 text-white transition'
+          : `filter-pill px-3 py-1 rounded-full text-xs font-medium bg-slate-800 ${idleText} transition`;
+      });
+      renderTasks();
+    }
+
+    function formatDeadlineBadge(deadlineStr) {
+      if (!deadlineStr) return '';
+      const d = new Date(deadlineStr);
+      if (isNaN(d.getTime())) return '';
+
+      const diffMs = d.getTime() - Date.now();
+      const formatted = d.toLocaleString([], {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+
+      if (diffMs < 0) {
+        return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-500/20 text-red-300 border border-red-500/30">⚠️ Overdue · ${formatted}</span>`;
+      }
+      if (diffMs <= 24 * 60 * 60 * 1000) {
+        return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30">⏰ Due ${formatted}</span>`;
+      }
+      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-800 text-slate-300">📅 ${formatted}</span>`;
+    }
+
+    function formatDuration(mins) {
+      const m = parseInt(mins, 10);
+      if (!m || isNaN(m)) return '';
+      if (m >= 60) {
+        const hrs = Math.floor(m / 60);
+        const rem = m % 60;
+        return rem ? `${hrs}h ${rem}m` : `${hrs}h`;
+      }
+      return `${m}m`;
+    }
+
+    async function loadTasks() {
+      const loader = document.getElementById('matrix-loading');
+      const list = document.getElementById('task-list');
+      loader.classList.remove('hidden');
+      list.innerHTML = '';
+
+      try {
+        const tasks = await apiCall('read');
+        cachedTasks = Array.isArray(tasks) ? tasks : [];
+        document.getElementById('pending-badge').textContent = cachedTasks.length;
+        renderTasks();
+      } catch (err) {
+        showToast('Sync error: ' + err.message);
+      } finally {
+        loader.classList.add('hidden');
+      }
+    }
+
+    function renderTasks() {
+      const list = document.getElementById('task-list');
+      list.innerHTML = '';
+
+      const filtered = cachedTasks
+        .filter(t => activeFilter === 'ALL' || t.quadrant === activeFilter)
+        .sort((a, b) => {
+          const qa = QUAD_ORDER[a.quadrant] || 9;
+          const qb = QUAD_ORDER[b.quadrant] || 9;
+          if (qa !== qb) return qa - qb;
+          const da = a.deadline ? new Date(a.deadline).getTime() : Infinity;
+          const db = b.deadline ? new Date(b.deadline).getTime() : Infinity;
+          return da - db;
+        });
+
+      if (filtered.length === 0) {
+        list.innerHTML = `<div class="text-center text-slate-500 text-sm py-12 bg-slate-900/50 border border-slate-800/60 rounded-xl">No pending tasks in this view.</div>`;
+        return;
+      }
+
+      filtered.forEach(task => {
+        const style = QUAD_STYLES[task.quadrant] || QUAD_STYLES.Q4;
+        const durText = formatDuration(task.duration);
+        const durBadge = durText
+          ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-800 text-slate-300">⏱ ${durText}</span>`
+          : '';
+        const deadlineBadge = formatDeadlineBadge(task.deadline);
+
+        const card = document.createElement('article');
+        card.className = `p-4 bg-slate-900 border border-slate-800 border-l-4 ${style.border} rounded-xl shadow-sm flex items-start justify-between gap-3`;
+        card.innerHTML = `
+          <div class="min-w-0 flex-1">
+            <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${style.badge}">
+              ${style.label}
+            </span>
+            <p class="text-slate-100 text-sm font-medium mt-1.5 leading-snug break-words">${escapeHtml(task.name)}</p>
+            ${(durBadge || deadlineBadge) ? `<div class="flex flex-wrap items-center gap-1.5 mt-2.5">${durBadge}${deadlineBadge}</div>` : ''}
+          </div>
+          <div class="flex flex-col gap-1.5 shrink-0">
+            <button onclick="updateTaskStatus(${Number(task.row)}, 'complete', this)"
+              title="Mark Complete"
+              class="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-600 text-emerald-400 hover:text-white text-xs font-semibold transition">
+              ✓ Done
+            </button>
+            <button onclick="updateTaskStatus(${Number(task.row)}, 'drop', this)"
+              title="Drop Task"
+              class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-red-600 text-slate-400 hover:text-white text-xs font-medium transition">
+              ✕ Drop
+            </button>
+          </div>
+        `;
+        list.appendChild(card);
+      });
+    }
+
+    async function updateTaskStatus(row, action, btn) {
+      const card = btn.closest('article');
+      const buttons = card.querySelectorAll('button');
+      buttons.forEach(b => { b.disabled = true; });
+      btn.textContent = '...';
+
+      try {
+        await apiCall(action, { row: Number(row) });
+        cachedTasks = cachedTasks.filter(t => t.row !== row);
+        document.getElementById('pending-badge').textContent = cachedTasks.length;
+        statsLoaded = false;
+        renderTasks();
+        showToast(action === 'complete' ? 'Task completed & calendar synced' : 'Task dropped & removed from calendar');
+      } catch (err) {
+        buttons.forEach(b => { b.disabled = false; });
+        btn.textContent = action === 'complete' ? '✓ Done' : '✕ Drop';
+        showToast('Failed: ' + err.message);
+      }
+    }
+
+    async function addTask(event) {
+      event.preventDefault();
+      const input = document.getElementById('new-task');
+      const btn = document.getElementById('add-btn');
+      const rawText = input.value.trim();
+      if (!rawText) return;
+
+      input.disabled = true;
+      btn.disabled = true;
+      btn.textContent = 'Sorting...';
+
+      try {
+        const res = await apiCall('add', { text: rawText });
+        const count = Array.isArray(res.tasks) ? res.tasks.length : 1;
+        input.value = '';
+        statsLoaded = false;
+        showToast(`AI logged ${count} task${count > 1 ? 's' : ''}`);
+        await loadTasks();
+      } catch (err) {
+        showToast('Error: ' + err.message);
+      } finally {
+        input.disabled = false;
+        btn.disabled = false;
+        btn.textContent = 'Add';
+        input.focus();
+      }
+    }
+
+    async function loadStats() {
+      const loader = document.getElementById('stats-loading');
+      const content = document.getElementById('stats-content');
+      const notice = document.getElementById('stats-notice');
+
+      loader.classList.remove('hidden');
+      content.classList.add('hidden');
+      notice.classList.add('hidden');
+
+      try {
+        const data = await apiCall('stats');
+        statsLoaded = true;
+
+        const s = data.summary;
+        document.getElementById('kpi-done').textContent = s.done7d;
+        document.getElementById('kpi-rate').textContent = `${s.completionRate}%`;
+        document.getElementById('kpi-focus').textContent = s.focusMins7d >= 60
+          ? `${(s.focusMins7d / 60).toFixed(1)}h`
+          : `${s.focusMins7d}m`;
+        document.getElementById('kpi-backlog').textContent = s.activeBacklog;
+
+        content.classList.remove('hidden');
+        renderCharts(data);
+      } catch (err) {
+        if (err.message.includes('Unknown action')) {
+          notice.classList.remove('hidden');
+        } else {
+          showToast('Stats error: ' + err.message);
+        }
+      } finally {
+        loader.classList.add('hidden');
+      }
+    }
+
+    function renderCharts(data) {
+      if (activityChartInstance) activityChartInstance.destroy();
+      if (quadrantChartInstance) quadrantChartInstance.destroy();
+
+      const ctx1 = document.getElementById('activityChart').getContext('2d');
+      activityChartInstance = new Chart(ctx1, {
+        type: 'bar',
+        data: {
+          labels: data.labels,
+          datasets: [
+            { label: 'Completed', data: data.doneSeries, backgroundColor: '#10b981', borderRadius: 4 },
+            { label: 'Pending', data: data.pendingSeries, backgroundColor: '#3b82f6', borderRadius: 4 },
+            { label: 'Dropped', data: data.droppedSeries, backgroundColor: '#f43f5e', borderRadius: 4 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { color: '#94a3b8', boxWidth: 10, font: { size: 11 } }
+            }
+          },
+          scales: {
+            x: { stacked: true, ticks: { color: '#94a3b8' }, grid: { display: false } },
+            y: { stacked: true, beginAtZero: true, ticks: { color: '#94a3b8', stepSize: 1 }, grid: { color: '#1e293b' } }
+          }
+        }
+      });
+
+      const q = data.quadrantsDone;
+      const totalQuad = q.Q1 + q.Q2 + q.Q3 + q.Q4;
+      const ctx2 = document.getElementById('quadrantChart').getContext('2d');
+      quadrantChartInstance = new Chart(ctx2, {
+        type: 'doughnut',
+        data: {
+          labels: ['Q1 Urgent', 'Q2 Deep Work', 'Q3 Batch', 'Q4 Later'],
+          datasets: [{
+            data: totalQuad > 0 ? [q.Q1, q.Q2, q.Q3, q.Q4] : [1],
+            backgroundColor: totalQuad > 0 ? ['#ef4444', '#3b82f6', '#f59e0b', '#64748b'] : ['#1e293b'],
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '66%',
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { color: '#cbd5e1', boxWidth: 10, font: { size: 11 } }
+            },
+            tooltip: { enabled: totalQuad > 0 }
+          }
+        }
+      });
+    }
+
+    // Register PWA Service Worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(err => {
+          console.warn('Service worker registration failed:', err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
